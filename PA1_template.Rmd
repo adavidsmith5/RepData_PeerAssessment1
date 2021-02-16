@@ -4,22 +4,78 @@ output:
   html_document:
     keep_md: true
 ---
-
-
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+```
 ## Loading and preprocessing the data
-
+Here, I unzip and read the CSV file into a dataframe. I then change the date variable to the Date format. I also add a column to the data frame to convert the intervals to time of day in hours and minutes.
+```{r echo=FALSE}
+activitydf <- read.csv("activity.csv")
+activitydf$date <- as.Date(activitydf$date)
+temp <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(activitydf$interval))
+temp <- paste0(temp, activitydf$interval)
+activitydf$timeofday <- format(strptime(temp, format="%H%M"), format = "%H:%M")
+str(activitydf)
+```
 
 
 ## What is mean total number of steps taken per day?
 
+```{r echo=FALSE}
+sums <- activitydf %>% group_by(date = date) %>% summarise(totalsteps = sum(steps))
+meantotalsteps <- mean(sums$totalsteps, na.rm=TRUE)
+mediantotalsteps <- median(sums$totalsteps, na.rm=TRUE)
+hist(sums$totalsteps, breaks=10, main="Histogram of Average Steps Per Day", xlab="Total Steps Per Day", col="green")
+```
 
+From the histogram, we can see that the total number of steps is slightly skewed, but the mean and median are very nearly the same because the mean total number of steps per day was `r format(meantotalsteps, scientific=FALSE)`, and the median was `r mediantotalsteps`.
 
 ## What is the average daily activity pattern?
 
+```{r echo=FALSE, message=FALSE}
+means <- activitydf %>% group_by(interval = interval) %>% summarise(avesteps = mean(steps, na.rm=TRUE), timeofday = timeofday)
+maxintervalrow <- means[which.max(means$avesteps),]
+maxinterval <- maxintervalrow$timeofday
+plot(means$interval, means$avesteps, type='l', col="blue", xlab="Time Interval", ylab="Average Steps", main="Average Daily Activity")
+```
 
+The time of the day with the highest maximum steps was `r maxinterval`.
 
 ## Imputing missing values
 
+```{r echo=FALSE}
+nas <- sum(is.na(activitydf$steps))
+```
 
+There are a total of `r nas` in the steps data. To account for this, I am going to impute the mean value for each interval for those values.
+
+```{r echo=FALSE}
+impute<-function(x) {
+  replace(x,is.na(x),mean(x,na.rm=TRUE))
+}
+  
+completedf<-ddply(activitydf,~interval,transform,steps = impute(steps))
+completesums <- completedf %>% group_by(date = date) %>% summarise(totalsteps = sum(steps))
+completemean <- mean(completesums$totalsteps)
+completemedian <- median(completesums$totalsteps)
+hist(completesums$totalsteps, breaks=10, col="darkorange2", main="Histogram of Total Steps with Imputation", xlab="Total Steps")
+```
+
+The new mean after imputing the mean for the NA values is `r format(completemean, scientific=FALSE)` and the new median is `r format(completemedian, scientific=FALSE)`. These values and the histogram have not really changed.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Finally, I am going to look at differences in weekdays and weekends to see if there is a different amount of activity.
+
+```{r echo=FALSE, message=FALSE}
+weekdays <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+
+completedf$weekday <- factor((weekdays(completedf$date) %in% weekdays), levels=c(FALSE, TRUE), labels=c('weekend', 'weekday'))
+weekdayavesteps <- completedf %>% group_by(weekday, interval) %>% summarise(interval = interval, avesteps = mean(steps))
+ggplot(weekdayavesteps, aes(interval, avesteps)) + geom_line(size=1) + facet_wrap(~weekday, ncol=1) + theme(panel.background = element_rect(fill="cornsilk"), panel.grid = element_line(color="cadetblue2"))
+
+```
+
